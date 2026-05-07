@@ -69,23 +69,23 @@ def calcular_income_statement(financials, cashflow, years):
 
     # Construcción del DataFrame para mostrar en Streamlit
     df_mostrar = pd.DataFrame({
-        "Sales Value of Production (Revenue)": revenue,
+        "Sales Value of Production (Revenue)": revenue / 1_000,
         "Y/Y Growth %": crec_revenue,
-        "COGS": cogs,
-        "Gross Profit": gross_profit,
+        "COGS": cogs / 1_000,
+        "Gross Profit": gross_profit / 1_000,
         "Gross margin %": margen_bruto,
-        "EBITDA": ebitda,
+        "EBITDA": ebitda / 1_000,
         "EBITDA margin %": margen_ebitda,
-        "Depreciation & Amortization Expense": depreciation,
-        "EBIT": ebit,
+        "Depreciation & Amortization Expense": depreciation / 1_000,
+        "EBIT": ebit / 1_000,
         "EBIT margin %": margen_ebit,
-        "Interest expense / Income": interest_exp,
-        "Pretax Income": pretax,
-        "Income Taxes": tax,
+        "Interest expense / Income": interest_exp / 1_000,
+        "Pretax Income": pretax / 1_000,
+        "Income Taxes": tax / 1_000,
         "tax rate %": tax_rate,
-        "Consolidated Net Income": consolidated_net_income,
-        "Minority Interest": minority,
-        "Net Income": net_income,
+        "Consolidated Net Income": consolidated_net_income / 1_000,
+        "Minority Interest": minority / 1_000,
+        "Net Income": net_income / 1_000,
         "Margen beneficio neto %": margen_neto,
         "Net income per share ( EPS )": eps,
         "Fully diluted shares (millions)": diluted_shares / 1_000_000
@@ -163,13 +163,13 @@ def calcular_flujos_caja(financials, cashflow, years):
 
     # Construcción del DataFrame para mostrar
     df_mostrar = pd.DataFrame({
-        "EBITDA": ebitda,
-        "Capex (introducir manual)": capex,
-        "Intereses": intereses,
-        "Tasas": tasas,
-        "WC": wc,
-        "Stock options/minoritarios": sbc,
-        "Flujo de caja libre": fcf,
+        "EBITDA": ebitda / 1_000,
+        "Capex (introducir manual)": capex / 1_000,
+        "Intereses": intereses / 1_000,
+        "Tasas": tasas / 1_000,
+        "WC": wc / 1_000,
+        "Stock options/minoritarios": sbc / 1_000,
+        "Flujo de caja libre": fcf / 1_000,
         "Flujo de caja libre por accion": fcf_per_share,
         "Conversion FCF/Ebitda %": conversion_fcf_ebitda,
         "Capex /Sale %": capex_sale,
@@ -194,14 +194,14 @@ if ticker_input:
             tab1, tab2, tab3, tab4 = st.tabs(["1. Income Statement", "2. Flujos de Caja", "3. Retornos Capital", "4. Valoración"])
             
             with tab1:
-                st.markdown("### 1. Income Statement")
+                st.markdown("### 1. Income Statement (All numbers in thousands)")
                 df_is = calcular_income_statement(financials, cashflow, years_input)
                 
                 # Mostramos la tabla en Streamlit (con un estilo visual agradable)
                 st.dataframe(df_is.style.format("{:,.2f}"), use_container_width=True)
                 
             with tab2:
-                st.markdown("### 2. Flujos de Caja")
+                st.markdown("### 2. Flujos de Caja (All numbers in thousands)")
                 df_fc = calcular_flujos_caja(financials, cashflow, years_input)
                 st.dataframe(df_fc.style.format("{:,.2f}"), use_container_width=True)
             with tab3:
