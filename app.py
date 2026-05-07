@@ -16,7 +16,7 @@ years_input = st.sidebar.slider("Años de historia a analizar", min_value=2, max
 @st.cache_data # Guardamos en caché para no descargar todo el tiempo
 def descargar_datos(ticker):
     t = yf.Ticker(ticker)
-    return t.info, t.financials, t.cashflow, t.balance_sheet
+    return t.info, t.financials, t.cashflow, t.balance_sheet, t.history(period="5y")
 
 def obtener_fila(df, posibles_nombres):
     for nombre in posibles_nombres:
@@ -276,10 +276,97 @@ def calcular_retornos_capital(financials, balance, years):
     df_mostrar.columns = [str(c)[:4] for c in df_mostrar.columns]
     return df_mostrar
 
+def calcular_valoracion(financials, balance, cashflow, hist, years, ticker_info):
+    todas_cols = sorted(financials.columns)
+    cols = todas_cols[-years:] if years else todas_cols
+        
+    fin = financials.reindex(columns=cols) if financials is not None and not financials.empty else pd.DataFrame(columns=cols)
+    bal = balance.reindex(columns=cols) if balance is not None and not balance.empty else pd.DataFrame(columns=cols)
+    cf  = cashflow.reindex(columns=cols) if cashflow is not None and not cashflow.empty else pd.DataFrame(columns=cols)
+    # Métricas Base
+    revenue = obtener_fila(fin, ["Total Revenue", "Operating Revenue", "Revenue"])
+    ebitda = obtener_fila(fin, ["EBITDA", "Ebitda", "Normalized EBITDA"])
+    ebit = obtener_fila(fin, ["Operating Income", "EBIT", "Ebit"])
+    net_income = obtener_fila(fin, ["Net Income", "Net Income Common Stockholders"])
+    diluted_shares = obtener_fila(fin, ["Diluted Average Shares", "Basic Average Shares"])
+    # FCF
+    op_cf = obtener_fila(cf, ["Operating Cash Flow", "Cash From Operations", "Net Cash Provided By Operating Activities"])
+    capex_raw = obtener_fila(cf, ["Capital Expenditure", "Capital Expenditures"])
+    fcf = pd.Series(index=cols)
+    for c in cols:
+        ocf = op_cf.get(c)
+        cap = capex_raw.get(c)
+        fcf[c] = ocf - abs(cap) if pd.notna(ocf) and pd.notna(cap) else None
+    # Net Debt
+    cash = obtener_fila(bal, ["Cash And Cash Equivalents", "Cash", "Cash And Equivalents"])
+    debt = obtener_fila(bal, ["Total Debt", "Long Term Debt And Capital Lease Obligation", "Short Long Term Debt Total"])
+    net_debt = pd.Series(index=cols)
+    for c in cols:
+        ch = cash.get(c, 0) if pd.notna(cash.get(c)) else 0
+        dt = debt.get(c, 0) if pd.notna(debt.get(c)) else 0
+        net_debt[c] = dt - ch
+    # Market Cap (Calculado con el precio de la acción en ese año)
+    market_cap = pd.Series(index=cols)
+    for c in cols:
+        year = c.year if hasattr(c, "year") else int(str(c)[:4])
+        df_year = hist[hist.index.year == year]
+        price = df_year.iloc[-1]["Close"] if not df_year.empty else ticker_info.get("currentPrice", 0)
+        
+        shares = diluted_shares.get(c)
+        market_cap[c] = shares * price if pd.notna(shares) and shares != 0 and price != 0 else None
+    # Deuda Neta / EBITDA
+    deuda_neta_ebitda = pd.Series(index=cols)
+    for c in cols:
+        nd = net_debt.get(c)
+        eb = ebitda.get(c)
+        deuda_neta_ebitda[c] = nd / eb if pd.notna(nd) and pd.notna(eb) and eb != 0 else None
+    # Enterprise Value
+    ev = pd.Series(index=cols)
+    for c in cols:
+        mc = market_cap.get(c)
+        nd = net_debt.get(c)
+        ev[c] = mc + nd if pd.notna(mc) and pd.notna(nd) else None
+    # Múltiplos
+    ev_sale = pd.Series(index=cols)
+    ev_ebitda = pd.Series(index=cols)
+    ev_ebit = pd.Series(index=cols)
+    ev_fcf = pd.Series(index=cols)
+    p_fcf = pd.Series(index=cols)
+    fcf_yield = pd.Series(index=cols)
+    pe = pd.Series(index=cols)
+    for c in cols:
+        ev_sale[c] = ev[c] / revenue[c] if pd.notna(ev.get(c)) and pd.notna(revenue.get(c)) and revenue[c] != 0 else None
+        ev_ebitda[c] = ev[c] / ebitda[c] if pd.notna(ev.get(c)) and pd.notna(ebitda.get(c)) and ebitda[c] != 0 else None
+        ev_ebit[c] = ev[c] / ebit[c] if pd.notna(ev.get(c)) and pd.notna(ebit.get(c)) and ebit[c] != 0 else None
+        ev_fcf[c] = ev[c] / fcf[c] if pd.notna(ev.get(c)) and pd.notna(fcf.get(c)) and fcf[c] != 0 else None
+        p_fcf[c] = market_cap[c] / fcf[c] if pd.notna(market_cap.get(c)) and pd.notna(fcf.get(c)) and fcf[c] != 0 else None
+        fcf_yield[c] = (fcf[c] / market_cap[c]) * 100 if pd.notna(market_cap.get(c)) and pd.notna(fcf.get(c)) and market_cap[c] != 0 else None
+        pe[c] = market_cap[c] / net_income[c] if pd.notna(market_cap.get(c)) and pd.notna(net_income.get(c)) and net_income[c] != 0 else None
+    # Construcción de la tabla (Dinero dividido por mil, ratios intactos)
+    df_mostrar = pd.DataFrame({
+        "Market cap": market_cap / 1_000,
+        "Net DEBT (-) si es caja neta": net_debt / 1_000,
+        "Deuda neta / EBITDA": deuda_neta_ebitda,
+        "Enterprise Value (EV)": ev / 1_000,
+        "EBITDA": ebitda / 1_000,
+        "EBIT": ebit / 1_000,
+        "Net income": net_income / 1_000,
+        "FCF": fcf / 1_000,
+        "EV / Sale": ev_sale,
+        "EV / EBITDA": ev_ebitda,
+        "EV / EBIT": ev_ebit,
+        "EV / FCF": ev_fcf,
+        "P / FCF": p_fcf,
+        "FCF Yield %": fcf_yield,
+        "PE": pe
+    }).T
+    df_mostrar.columns = [str(c)[:4] for c in df_mostrar.columns]
+    return df_mostrar
+
 if ticker_input:
     try:
         with st.spinner(f"Descargando datos para {ticker_input}..."):
-            info, financials, cashflow, balance = descargar_datos(ticker_input)
+            info, financials, cashflow, balance, history = descargar_datos(ticker_input)
             
         if financials.empty:
             st.error(f"No se encontraron datos financieros para {ticker_input}.")
@@ -305,7 +392,9 @@ if ticker_input:
                 df_rc = calcular_retornos_capital(financials, balance, years_input)
                 st.dataframe(df_rc.style.format("{:,.2f}"), use_container_width=True)
             with tab4:
-                st.info("Próximamente: Aquí integraremos la Fase 4 (Valoración).")
+                st.markdown("### 4. Valoración Histórica (All numbers in thousands)")
+                df_val = calcular_valoracion(financials, balance, cashflow, history, years_input, info)
+                st.dataframe(df_val.style.format("{:,.2f}"), use_container_width=True)
 
     except Exception as e:
         st.error(f"Ocurrió un error al procesar el ticker: {e}")
