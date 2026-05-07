@@ -31,8 +31,8 @@ def calcular_income_statement(financials, cashflow, years):
     if not cols:
         return pd.DataFrame()
         
-    fin = financials[cols]
-    cf = cashflow[cols] if cashflow is not None and not cashflow.empty else pd.DataFrame(columns=cols)
+    fin = financials.reindex(columns=cols) if financials is not None and not financials.empty else pd.DataFrame(columns=cols)
+    cf = cashflow.reindex(columns=cols) if cashflow is not None and not cashflow.empty else pd.DataFrame(columns=cols)
 
     # Extracción de métricas
     revenue = obtener_fila(fin, ["Total Revenue", "Operating Revenue", "Revenue"])
@@ -103,8 +103,9 @@ def calcular_flujos_caja(financials, cashflow, years):
     if not cols:
         return pd.DataFrame()
         
-    fin = financials[cols] if financials is not None and not financials.empty else pd.DataFrame(columns=cols)
-    cf = cashflow[cols] if cashflow is not None and not cashflow.empty else pd.DataFrame(columns=cols)
+    fin = financials.reindex(columns=cols) if financials is not None and not financials.empty else pd.DataFrame(columns=cols)
+    cf = cashflow.reindex(columns=cols) if cashflow is not None and not cashflow.empty else pd.DataFrame(columns=cols)
+
 
     # Extracción de métricas
     revenue = obtener_fila(fin, ["Total Revenue", "Operating Revenue", "Revenue"])
