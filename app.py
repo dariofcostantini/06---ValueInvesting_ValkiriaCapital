@@ -96,6 +96,89 @@ def calcular_income_statement(financials, cashflow, years):
     
     return df_mostrar
 
+def calcular_flujos_caja(financials, cashflow, years):
+    todas_cols = sorted(cashflow.columns)
+    cols = todas_cols[-years:] if years else todas_cols
+    
+    if not cols:
+        return pd.DataFrame()
+        
+    fin = financials[cols] if financials is not None and not financials.empty else pd.DataFrame(columns=cols)
+    cf = cashflow[cols] if cashflow is not None and not cashflow.empty else pd.DataFrame(columns=cols)
+
+    # Extracción de métricas
+    revenue = obtener_fila(fin, ["Total Revenue", "Operating Revenue", "Revenue"])
+    ebitda = obtener_fila(fin, ["EBITDA", "Ebitda", "Normalized EBITDA"])
+    
+    capex_raw = obtener_fila(cf, ["Capital Expenditure", "Capital Expenditures", "Purchase Of Property Plant And Equipment"])
+    capex = capex_raw.copy()
+    for c in cols:
+        if pd.notna(capex.get(c)):
+            capex[c] = abs(capex[c])
+            
+    interest_exp = obtener_fila(fin, ["Net Non Operating Interest Income Expense", "Interest Expense", "Interest Expense Non Operating"])
+    intereses = interest_exp.copy()
+    for c in cols:
+        if pd.notna(intereses.get(c)):
+            intereses[c] = abs(intereses[c])
+
+    tax = obtener_fila(fin, ["Tax Provision", "Income Tax Expense"])
+    tasas = tax.copy()
+    for c in cols:
+        if pd.notna(tasas.get(c)):
+            tasas[c] = abs(tasas[c])
+
+    wc = obtener_fila(cf, ["Change In Working Capital"])
+    sbc = obtener_fila(cf, ["Stock Based Compensation", "Share Based Compensation"])
+
+    op_cf = obtener_fila(cf, ["Operating Cash Flow", "Cash From Operations", "Net Cash Provided By Operating Activities", "Total Cash From Operating Activities"])
+    fcf = pd.Series(index=cols)
+    for c in cols:
+        if pd.notna(op_cf.get(c)) and pd.notna(capex.get(c)):
+            fcf[c] = op_cf[c] - capex[c]
+        else:
+            fcf[c] = None
+
+    diluted_shares = obtener_fila(fin, ["Diluted Average Shares", "Basic Average Shares"])
+    
+    fcf_per_share = pd.Series(index=cols)
+    conversion_fcf_ebitda = pd.Series(index=cols)
+    capex_sale = pd.Series(index=cols)
+
+    for c in cols:
+        if pd.notna(fcf.get(c)) and pd.notna(diluted_shares.get(c)) and diluted_shares[c] != 0:
+            fcf_per_share[c] = fcf[c] / diluted_shares[c]
+        else:
+            fcf_per_share[c] = None
+            
+        if pd.notna(fcf.get(c)) and pd.notna(ebitda.get(c)) and ebitda[c] != 0:
+            conversion_fcf_ebitda[c] = (fcf[c] / ebitda[c]) * 100
+        else:
+            conversion_fcf_ebitda[c] = None
+
+        if pd.notna(capex.get(c)) and pd.notna(revenue.get(c)) and revenue[c] != 0:
+            capex_sale[c] = (capex[c] / revenue[c]) * 100
+        else:
+            capex_sale[c] = None
+
+    # Construcción del DataFrame para mostrar
+    df_mostrar = pd.DataFrame({
+        "EBITDA": ebitda,
+        "Capex (introducir manual)": capex,
+        "Intereses": intereses,
+        "Tasas": tasas,
+        "WC": wc,
+        "Stock options/minoritarios": sbc,
+        "Flujo de caja libre": fcf,
+        "Flujo de caja libre por accion": fcf_per_share,
+        "Conversion FCF/Ebitda %": conversion_fcf_ebitda,
+        "Capex /Sale %": capex_sale,
+    }).T
+
+    df_mostrar.columns = [str(c)[:4] for c in df_mostrar.columns]
+    
+    return df_mostrar
+
 # --- INTERFAZ PRINCIPAL ---
 if ticker_input:
     try:
@@ -115,10 +198,12 @@ if ticker_input:
                 df_is = calcular_income_statement(financials, cashflow, years_input)
                 
                 # Mostramos la tabla en Streamlit (con un estilo visual agradable)
-                st.dataframe(df_is.style.format(precision=2), use_container_width=True)
+                st.dataframe(df_is.style.format("{:,.2f}"), use_container_width=True)
                 
             with tab2:
-                st.info("Próximamente: Aquí integraremos la Fase 2 (Flujos de caja).")
+                st.markdown("### 2. Flujos de Caja")
+                df_fc = calcular_flujos_caja(financials, cashflow, years_input)
+                st.dataframe(df_fc.style.format("{:,.2f}"), use_container_width=True)
             with tab3:
                 st.info("Próximamente: Aquí integraremos la Fase 3 (Retornos de capital).")
             with tab4:
